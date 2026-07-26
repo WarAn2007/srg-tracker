@@ -1,0 +1,4 @@
+split,rows,students,pass_rate
+test,7000,50,0.74
+train,42000,300,0.766
+validation,14000,100,0.769

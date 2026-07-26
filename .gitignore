@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.DS_Store
+
+# Generated artifacts
+models/*
+!models/.gitkeep
+reports/figures/*
+!reports/figures/.gitkeep
+
+# Local tooling and secrets
+.env
+.vscode/
+logs/ai/*.tmp
