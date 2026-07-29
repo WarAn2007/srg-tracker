@@ -2,73 +2,70 @@
 
 **Student Risk and Grade Tracker** is an educational machine-learning capstone project. It uses weekly course activity to predict:
 
-- final course score (0–100);
+- final course score from 0 to 100;
 - course outcome: `pass` or `enroll` (repeat the course);
 - learning pace: `behind`, `on_track`, or `ahead`.
 
-## Project scope
+The first version uses reproducible synthetic data for 450 students. It is an experiment and demonstration only and must not be used for real academic decisions.
 
-The first version uses a reproducible synthetic dataset. It models 450 unique students across two semesters, five courses and fourteen weeks per course. It is designed for experimentation and demonstration only; it must not be used for real academic decisions.
+## First-version results
 
-The model receives only information available at the selected week. The final-exam score and final targets are never model inputs, preventing target leakage.
+The selected model for every task is HistGradientBoosting. Selection used only the validation split. The selected pipelines were refitted on train + validation and evaluated once on the student-disjoint test split.
+
+| Task | Test metrics |
+| --- | --- |
+| Final score | MAE 3.18, RMSE 4.26, R² 0.815 |
+| Course outcome | enroll recall 0.720, enroll F1 0.759, ROC-AUC 0.941 |
+| Learning pace | Macro-F1 0.855, balanced accuracy 0.851 |
+
+Early-week score prediction is less accurate: test MAE falls from approximately 6.00 in week 1 to 2.08 in week 14 as more course information becomes available.
 
 ## Repository layout
 
 ```text
 data/
-  processed/       # train, validation and test CSV files
-  metadata/        # data dictionary and dataset card
-notebooks/         # EDA, modelling and final demo notebooks
-src/               # reproducible Python source code
-models/            # generated model artifacts (not committed)
-reports/figures/   # generated charts (not committed)
-docx/              # capstone brief and course requirements
+  processed/          # student-disjoint train, validation and test CSV files
+  metadata/           # dataset card and feature definitions
+models/               # generated .joblib pipelines (ignored by Git)
+notebooks/
+  01_eda.ipynb
+  02_baselines.ipynb
+  03_demo.ipynb
+  04_final_evaluation.ipynb
+reports/
+  figures/            # generated charts (ignored by Git)
+  metrics/            # EDA, validation, test and error-analysis tables
+  predictions/        # row-level held-out test predictions
+src/                  # reusable generation, training, evaluation and inference code
+tests/                # leakage, split, validation and inference checks
+instructions.md       # detailed Russian-language learning guide
 ```
 
-## Dataset
+## Reproduce the project
 
-Generate the dataset from the project root:
-
-```powershell
-python src/generate_dataset.py
-```
-
-The split is student-disjoint: 300 students in training, 100 in validation and 50 in test. Each row represents one student, course, semester and week.
-
-The final course score is calculated as:
-
-```text
-0.25 × midterm + 0.25 × final_exam + 0.10 × attendance
-+ 0.10 × average_weekly_grade + 0.20 × average_assignment
-+ 0.20 × average_quiz
-```
-
-A score of 65 or higher is `pass`; otherwise the outcome is `enroll`.
-
-## Planned modelling and evaluation
-
-Three supervised models will be evaluated independently:
-
-| Task | Target | Primary metrics |
-| --- | --- | --- |
-| Regression | `final_course_score` | MAE, RMSE, R² |
-| Binary classification | `course_outcome` | Recall, F1, ROC-AUC |
-| Multiclass classification | `learning_pace` | Macro F1, balanced accuracy |
-
-The project will compare simple baselines with tree-based and linear models. The held-out test set will remain untouched until final evaluation.
-
-## Setup
+From the repository root in PowerShell:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 python src/generate_dataset.py
+python -m src.eda
+python -m src.train
+python -m src.final_evaluation
+python -m unittest discover -s tests -v
+jupyter notebook
 ```
 
-## Responsible AI and limitations
+Open the notebooks in numeric order. `03_demo.ipynb` loads the saved pipelines and predicts all three targets for one weekly record.
 
-This dataset is synthetic and encodes simplified assumptions about learning. Predictions are advisory indicators, not decisions about grades, enrolment, discipline or access to education. A qualified instructor must review any real-world intervention. The project intentionally excludes sensitive demographic attributes and student-to-student recommendations.
+## Leakage prevention
+
+Only information available at the selected week enters the model. `student_id`, `final_exam_score_audit_only`, `final_course_score`, `course_outcome`, and all other target fields are excluded from model inputs. Split membership is based on unique students, so one student cannot appear in both training and evaluation data.
+
+## Responsible use
+
+The dataset is synthetic and encodes simplified assumptions about learning. It contains no real students or demographic attributes. Predictions are advisory indicators, not decisions about grades, enrolment, discipline, ranking, or access to education. A qualified instructor and an approved privacy/fairness process would be required before any real-world use.
 
 ## Author
 

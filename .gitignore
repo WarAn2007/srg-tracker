@@ -9,6 +9,10 @@ models/*
 !models/.gitkeep
 reports/figures/*
 !reports/figures/.gitkeep
+reports/.matplotlib-cache/
+reports/.jupyter-config/
+reports/.jupyter-data/
+reports/.jupyter-runtime/
 
 # Local tooling and secrets
 .env

@@ -1,0 +1,58 @@
+Here instuctions for main files creation and separation:
+
+# reports folder
+• figures folder to store visualized data like graphs
+• metrics folder to store resutls of models evaltuaions
+• predictions folder to store test dataset results
+• presentation folder for pdf file of presentation
+
+
+# src folder
+• add config file to store directories to files in the SRG-model folder, random state number same for every model, list of [features, targets, models to evaluate]
+• generate_dataset file to recreate a synthetic data  again for train, validation and test
+• preprocessing.py to turn raw data into permissible data for sklearn, add imputers median for numeric and most frequent for categorical. add standard scaler and build pipeline of models and preprocessing plan
+• train.py to create baseline models for dummy guessing, and models of evaluation [random forest, gradient boost for all, and specifically ridge for score and logistic regression for classification].
+• evaluation.py to evaluate:
+ - score - mae, rmse, r2,
+ - outcome of course - recall of enroll, f1, roc-auc, accuracy,
+ - learning pace - macro-f1, accuracy, balanced accuracy. 
+• inference.py, to check if user passed all 12 features. rejects targets and future features. retrive models from .joblib and return final evaluation scores.
+• utils.py for other functions, to not litter files.
+
+# tests folder
+• create a pipeline checking file .py, to test:
+ - ignorance of future features to avoid leakage 
+ - of not crossing of students with same id
+ - rejection if the records doesn't contain at least minimum information to forecast for the appropriate results
+ - ability of models to complete prediction
+
+# notebooks folder
+• create a brief intro for each of notebooks about themselves
+• add error handlers for them
+• use pathlib module to extract data from src folder and obtain directory variables
+
+--- 01_eda.ipynb ---
+
+• storea all functions in src/eda.py to make a clean notebook
+• import train, validation, test datasets -> check size of rows and number of students(unique id)
+• use tests/test_pipeline.py to testify data
+• check for NaN data and use describe() for the targets in train data
+• save in reports/metrics tabular data, and graphs in reports/figures
+
+--- 02_baseline.ipynb ---
+• test models from scr.train on metrics to find the best score model
+• as the evaluation metrics choose: rmse for score, F1 fir outcome and macro-F1 for pace
+• find the best among all of them 
+
+--- 03_demo.ipynb ---
+
+• test on one syntactic student
+• add recommendation for users to test by themselves and add warning of data leakage
+
+--- 04.final_evaluation.ipynb ---
+•store functions in src/final_evaluation.py
+• show final metrics of the best model chosen by 02_baseline.ipynb
+• check model on weekly records
+• store detailed results on reports/metrics and graphical in report/figures
+
+--- final_product.ipynb ---
