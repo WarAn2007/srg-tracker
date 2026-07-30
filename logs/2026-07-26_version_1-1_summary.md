@@ -3,7 +3,7 @@
 **Date:** 26 July 2026  
 **Project:** Student Stats / Early Warning Model  
 **Author:** Anvar Ibragimov  
-**Repository:** https://github.com/WarAn2007/student-stats-early-warning-model
+**Repository:** https://github.com/WarAn2007/srg-tracker
 
 ## Purpose of the discussion
 
@@ -128,7 +128,7 @@ Out of scope for the first version:
 - Checked row counts, student overlap, score ranges and target categories.
 - Updated `docx/Capstone_Project.docx`, including the technical proposal, metrics, scope, acceptance criteria, unresolved questions and optional directions.
 - Created the first two local commits.
-- Created and connected the GitHub repository `WarAn2007/student-stats-early-warning-model`.
+- Created and connected the GitHub repository `WarAn2007/srg-tracker`.
 - Pushed the `main` branch to GitHub.
 
 ## Limitations recorded
