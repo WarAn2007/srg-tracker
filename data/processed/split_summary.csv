@@ -1,4 +1,4 @@
-split,rows,students,pass_rate
-test,7000,50,0.74
-train,42000,300,0.766
-validation,14000,100,0.769
+split,rows,students,attempts,enroll_rate,average_gpa
+test,7000,50,500,0.308,1.9835
+train,42000,300,3000,0.377,1.7517
+validation,14000,100,1000,0.337,1.87

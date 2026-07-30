@@ -1,9 +1,12 @@
-"""Metrics and diagnostic reports for SRG model experiments."""
+"""Metrics, rankings, and operational measurements for SRG experiments."""
 
 from __future__ import annotations
 
-from typing import Any
+import io
+import time
+from typing import Any, Callable
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
@@ -17,48 +20,96 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
-from src.config import TARGETS, TASK_TYPES
+from src.config import TARGETS
 
 
-def evaluate_predictions(task: str, y_true: pd.Series, y_pred: np.ndarray, y_probability: np.ndarray | None = None) -> dict[str, float]:
-    """Calculate the agreed metrics for one task without fitting a model."""
+def evaluate_predictions(
+    task: str,
+    y_true: pd.Series | np.ndarray,
+    y_pred: np.ndarray,
+    y_probability: np.ndarray | None = None,
+) -> dict[str, float]:
+    """Calculate the approved predictive metrics for one task."""
     if task not in TARGETS:
         raise ValueError(f"Unknown task '{task}'.")
-    if TASK_TYPES[task] == "regression":
+    true = np.asarray(y_true)
+    predicted = np.asarray(y_pred)
+    if task == "gpa":
         return {
-            "mae": float(mean_absolute_error(y_true, y_pred)),
-            "rmse": float(mean_squared_error(y_true, y_pred) ** 0.5),
-            "r2": float(r2_score(y_true, y_pred)),
+            "mae": float(mean_absolute_error(true, predicted)),
+            "rmse": float(mean_squared_error(true, predicted) ** 0.5),
+            "r2": float(r2_score(true, predicted)),
+            "within_0_25": float(np.mean(np.abs(true - predicted) <= 0.25)),
         }
-
     if task == "outcome":
-        positive_label = "enroll"
-        metrics = {
-            "recall_enroll": float(recall_score(y_true, y_pred, pos_label=positive_label, zero_division=0)),
-            "f1_enroll": float(f1_score(y_true, y_pred, pos_label=positive_label, zero_division=0)),
-            "accuracy": float(accuracy_score(y_true, y_pred)),
+        result = {
+            "recall_enroll": float(
+                recall_score(true, predicted, pos_label="enroll", zero_division=0)
+            ),
+            "f1_enroll": float(
+                f1_score(true, predicted, pos_label="enroll", zero_division=0)
+            ),
+            "accuracy": float(accuracy_score(true, predicted)),
         }
-        if y_probability is not None and y_true.nunique() == 2:
-            metrics["roc_auc_enroll"] = float(roc_auc_score((y_true == positive_label).astype(int), y_probability))
-        return metrics
-
+        if y_probability is not None and len(np.unique(true)) == 2:
+            result["roc_auc_enroll"] = float(
+                roc_auc_score((true == "enroll").astype(int), y_probability)
+            )
+        return result
+    labels = ["behind", "on_track", "ahead"]
+    recalls = recall_score(true, predicted, labels=labels, average=None, zero_division=0)
     return {
-        "macro_f1": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
-        "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
-        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "macro_f1": float(f1_score(true, predicted, average="macro", zero_division=0)),
+        "balanced_accuracy": float(balanced_accuracy_score(true, predicted)),
+        "accuracy": float(accuracy_score(true, predicted)),
+        **{
+            f"recall_{label}": float(value)
+            for label, value in zip(labels, recalls, strict=True)
+        },
     }
 
 
-def evaluate_model(task: str, model: Any, features: pd.DataFrame, target: pd.Series) -> tuple[dict[str, float], np.ndarray]:
-    """Predict with a fitted pipeline and return task metrics plus predictions."""
-    predictions = model.predict(features)
-    probabilities = None
-    if task == "outcome" and hasattr(model, "predict_proba"):
-        class_index = list(model.classes_).index("enroll")
-        probabilities = model.predict_proba(features)[:, class_index]
-    return evaluate_predictions(task, target, predictions, probabilities), predictions
+def serialized_size_bytes(model: Any) -> int:
+    """Measure a joblib-serializable model without creating a report artifact."""
+    buffer = io.BytesIO()
+    joblib.dump(model, buffer)
+    return buffer.tell()
 
 
-def metrics_table(results: list[dict[str, Any]]) -> pd.DataFrame:
-    """Convert experiment records into a consistently ordered report table."""
-    return pd.DataFrame(results).sort_values(["task", "model"]).reset_index(drop=True)
+def median_inference_ms(
+    predict_one: Callable[[int], Any],
+    sample_count: int,
+    *,
+    warmups: int = 10,
+    repeats: int = 100,
+) -> float:
+    """Measure median single-example inference time after warm-up."""
+    if sample_count < 1:
+        raise ValueError("sample_count must be positive.")
+    for index in range(min(warmups, sample_count)):
+        predict_one(index)
+    durations: list[float] = []
+    for index in range(repeats):
+        start = time.perf_counter()
+        predict_one(index % sample_count)
+        durations.append((time.perf_counter() - start) * 1000.0)
+    return float(np.median(durations))
+
+
+def add_task_rankings(frame: pd.DataFrame) -> pd.DataFrame:
+    """Rank overall model rows in the correct direction for each task."""
+    ranked = frame.copy()
+    ranked["rank"] = np.nan
+    rules = {
+        "gpa": ("rmse", True),
+        "outcome": ("f1_enroll", False),
+        "pace": ("macro_f1", False),
+    }
+    for task, (metric, ascending) in rules.items():
+        mask = (ranked["task"] == task) & (ranked["cutoff"].astype(str) == "all")
+        order = ranked.loc[mask, metric].rank(method="min", ascending=ascending)
+        ranked.loc[mask, "rank"] = order
+    return ranked.sort_values(
+        ["task", "cutoff", "rank", "model"],
+        na_position="last",
+    ).reset_index(drop=True)

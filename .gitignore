@@ -7,12 +7,15 @@ __pycache__/
 # Generated artifacts
 models/*
 !models/.gitkeep
+!models/MODEL_CARD.md
 reports/figures/*
 !reports/figures/.gitkeep
 reports/.matplotlib-cache/
 reports/.jupyter-config/
 reports/.jupyter-data/
 reports/.jupyter-runtime/
+reports/.ipython/
+reports/metrics/final_evaluation_state.json
 
 # Local tooling and secrets
 .env

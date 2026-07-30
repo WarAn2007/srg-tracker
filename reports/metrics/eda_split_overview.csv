@@ -1,0 +1,4 @@
+split,rows,students,attempts,courses,semesters,weeks
+train,42000,300,3000,5,2,14
+validation,14000,100,1000,5,2,14
+test,7000,50,500,5,2,14

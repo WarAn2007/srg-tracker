@@ -1,0 +1,6 @@
+target,label,count,fraction
+course_outcome,pass,26166,0.623
+course_outcome,enroll,15834,0.377
+learning_pace,on_track,25648,0.6106666666666667
+learning_pace,ahead,10164,0.242
+learning_pace,behind,6188,0.14733333333333334

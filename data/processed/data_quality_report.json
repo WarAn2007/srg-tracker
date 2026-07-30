@@ -1,0 +1,83 @@
+{
+  "seed": 20260730,
+  "rows": 63000,
+  "students": 450,
+  "attempts": 4500,
+  "weeks_per_attempt": 14,
+  "split_rows": {
+    "test": 7000,
+    "train": 42000,
+    "validation": 14000
+  },
+  "split_students": {
+    "test": 50,
+    "train": 300,
+    "validation": 100
+  },
+  "student_overlap": {
+    "train_validation": 0,
+    "train_test": 0,
+    "validation_test": 0
+  },
+  "target_ranges": {
+    "final_course_score": [
+      34.96,
+      96.6
+    ],
+    "final_gpa": [
+      0.0,
+      4.5
+    ]
+  },
+  "course_outcome_distribution": {
+    "pass": 2878,
+    "enroll": 1622
+  },
+  "learning_pace_distribution": {
+    "on_track": 2719,
+    "ahead": 1133,
+    "behind": 648
+  },
+  "missingness_rules": {
+    "midterm_missing_before_week_7": true,
+    "midterm_present_from_week_7": true,
+    "final_exam_present_only_at_week_14": true
+  },
+  "attempt_level_correlations": {
+    "final_course_score": {
+      "final_course_score": 1.0,
+      "average_weekly_grade_to_date": 0.899,
+      "attendance_rate_to_date": 0.392,
+      "average_assignment_score_to_date": 0.869,
+      "average_quiz_score_to_date": 0.854
+    },
+    "average_weekly_grade_to_date": {
+      "final_course_score": 0.899,
+      "average_weekly_grade_to_date": 1.0,
+      "attendance_rate_to_date": 0.285,
+      "average_assignment_score_to_date": 0.898,
+      "average_quiz_score_to_date": 0.87
+    },
+    "attendance_rate_to_date": {
+      "final_course_score": 0.392,
+      "average_weekly_grade_to_date": 0.285,
+      "attendance_rate_to_date": 1.0,
+      "average_assignment_score_to_date": 0.265,
+      "average_quiz_score_to_date": 0.254
+    },
+    "average_assignment_score_to_date": {
+      "final_course_score": 0.869,
+      "average_weekly_grade_to_date": 0.898,
+      "attendance_rate_to_date": 0.265,
+      "average_assignment_score_to_date": 1.0,
+      "average_quiz_score_to_date": 0.791
+    },
+    "average_quiz_score_to_date": {
+      "final_course_score": 0.854,
+      "average_weekly_grade_to_date": 0.87,
+      "attendance_rate_to_date": 0.254,
+      "average_assignment_score_to_date": 0.791,
+      "average_quiz_score_to_date": 1.0
+    }
+  }
+}

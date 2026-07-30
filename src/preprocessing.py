@@ -1,61 +1,132 @@
-"""Safe dataset loading and feature preprocessing for all SRG tasks."""
+"""Dataset loading and leakage-safe history preprocessing."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterable
 
+import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from src.config import CATEGORICAL_FEATURES, DATA_DIR, FEATURE_COLUMNS, NUMERIC_FEATURES, TARGETS
+from src.config import (
+    AGGREGATED_FEATURE_COLUMNS,
+    CATEGORICAL_FEATURES,
+    DATA_DIR,
+    EVALUATION_CUTOFFS,
+    HISTORY_REQUIRED_FIELDS,
+    NUMERIC_FEATURES,
+    TARGETS,
+    V1_FEATURE_COLUMNS,
+)
+from src.features import aggregate_history
 
 
 def load_split(split: str, data_dir: Path = DATA_DIR) -> pd.DataFrame:
-    """Load one generated split and check that its required columns exist."""
+    """Load one generated split and validate its minimum V2.2 schema."""
+    if split not in {"train", "validation", "test"}:
+        raise ValueError("split must be train, validation, or test.")
     path = data_dir / f"{split}.csv"
     if not path.exists():
-        raise FileNotFoundError(f"Dataset split not found: {path}. Run src/generate_dataset.py first.")
+        raise FileNotFoundError(
+            f"Dataset split not found: {path}. Run `python -m src.generate_dataset` first."
+        )
     frame = pd.read_csv(path)
-    required = set(FEATURE_COLUMNS) | set(TARGETS.values()) | {"student_id"}
+    required = (
+        set(HISTORY_REQUIRED_FIELDS)
+        | set(TARGETS.values())
+        | {"student_id", "final_course_score", "final_exam_score_audit_only"}
+        | set(V1_FEATURE_COLUMNS)
+    )
     missing = required.difference(frame.columns)
     if missing:
         raise ValueError(f"{path} is missing required columns: {sorted(missing)}")
     return frame
 
 
+def history_from_group(group: pd.DataFrame, cutoff: int) -> list[dict[str, object]]:
+    """Create a JSON-like prediction history through one cutoff."""
+    selected = group.loc[group["week"] <= cutoff, HISTORY_REQUIRED_FIELDS].sort_values("week")
+    if selected.empty or int(selected["week"].max()) != cutoff:
+        raise ValueError(f"Attempt does not contain cutoff week {cutoff}.")
+    records = selected.replace({np.nan: None}).to_dict("records")
+    return [dict(record) for record in records]
+
+
+def build_aggregated_examples(
+    frame: pd.DataFrame,
+    cutoffs: Iterable[int] = EVALUATION_CUTOFFS,
+) -> pd.DataFrame:
+    """Build one leakage-safe aggregate row per attempt and cutoff."""
+    rows: list[dict[str, object]] = []
+    for _, group in frame.groupby("attempt_id", sort=False):
+        first = group.iloc[0]
+        for cutoff in cutoffs:
+            history = history_from_group(group, int(cutoff))
+            row = aggregate_history(history)
+            row.update(
+                {
+                    "student_id": first["student_id"],
+                    "attempt_id": first["attempt_id"],
+                    **{column: first[column] for column in TARGETS.values()},
+                }
+            )
+            rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def build_latest_week_examples(
+    frame: pd.DataFrame,
+    cutoffs: Iterable[int] = EVALUATION_CUTOFFS,
+) -> pd.DataFrame:
+    """Return latest-week V1-compatible rows for the requested cutoffs."""
+    selected = frame.loc[frame["week"].isin(tuple(cutoffs))].copy()
+    columns = [
+        "student_id",
+        "attempt_id",
+        *V1_FEATURE_COLUMNS,
+        *TARGETS.values(),
+        "final_course_score",
+    ]
+    return selected.loc[:, columns].reset_index(drop=True)
+
+
 def get_features(frame: pd.DataFrame) -> pd.DataFrame:
-    """Return only prediction-time features; audit and target fields never enter a model."""
-    missing = set(FEATURE_COLUMNS).difference(frame.columns)
+    """Return the canonical aggregated feature frame."""
+    missing = set(AGGREGATED_FEATURE_COLUMNS).difference(frame.columns)
     if missing:
-        raise ValueError(f"Input is missing feature columns: {sorted(missing)}")
-    return frame.loc[:, FEATURE_COLUMNS].copy()
+        raise ValueError(f"Input is missing aggregated features: {sorted(missing)}")
+    return frame.loc[:, AGGREGATED_FEATURE_COLUMNS].copy()
 
 
 def get_target(frame: pd.DataFrame, task: str) -> pd.Series:
-    """Return the selected task target, rejecting unknown task names."""
+    """Return one approved target."""
     if task not in TARGETS:
         raise ValueError(f"Unknown task '{task}'. Choose one of: {', '.join(TARGETS)}")
     return frame[TARGETS[task]].copy()
 
 
 def build_preprocessor(scale_numeric: bool = False) -> ColumnTransformer:
-    """Create a train-fitted preprocessing step for raw weekly records."""
-    numeric_steps = [("imputer", SimpleImputer(strategy="median"))]
+    """Create train-fitted preprocessing for aggregated history features."""
+    numeric_steps: list[tuple[str, object]] = [
+        ("imputer", SimpleImputer(strategy="median", keep_empty_features=True))
+    ]
     if scale_numeric:
         numeric_steps.append(("scaler", StandardScaler()))
     numeric_pipeline = Pipeline(numeric_steps)
     categorical_pipeline = Pipeline(
         [
             ("imputer", SimpleImputer(strategy="most_frequent")),
-            # Dense output keeps the shared transformer compatible with
-            # HistGradientBoosting, which does not accept sparse matrices.
             ("one_hot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
         ]
     )
     return ColumnTransformer(
-        [("numeric", numeric_pipeline, NUMERIC_FEATURES), ("categorical", categorical_pipeline, CATEGORICAL_FEATURES)],
+        [
+            ("numeric", numeric_pipeline, NUMERIC_FEATURES),
+            ("categorical", categorical_pipeline, CATEGORICAL_FEATURES),
+        ],
         remainder="drop",
     )
