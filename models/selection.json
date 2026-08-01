@@ -1,0 +1,42 @@
+{
+  "selection_frozen_before_test": true,
+  "selection_method": "user_configured_after_validation_review",
+  "configured_models": {
+    "gpa": "mlp_adam",
+    "outcome": "linear",
+    "pace": "linear"
+  },
+  "seed": 20260730,
+  "cutoffs": [
+    4,
+    7,
+    10,
+    14
+  ],
+  "tasks": {
+    "gpa": {
+      "model": "mlp_adam",
+      "representation": "aggregated_history",
+      "primary_metric": "rmse",
+      "validation_value": 0.737625290096097,
+      "validation_rank": 3,
+      "selection_method": "user_configured_after_validation_review"
+    },
+    "outcome": {
+      "model": "linear",
+      "representation": "aggregated_history",
+      "primary_metric": "f1_enroll",
+      "validation_value": 0.8247422680412371,
+      "validation_rank": 3,
+      "selection_method": "user_configured_after_validation_review"
+    },
+    "pace": {
+      "model": "linear",
+      "representation": "aggregated_history",
+      "primary_metric": "macro_f1",
+      "validation_value": 0.7600145979469568,
+      "validation_rank": 3,
+      "selection_method": "user_configured_after_validation_review"
+    }
+  }
+}

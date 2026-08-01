@@ -17,8 +17,16 @@ os.environ.setdefault(
     "MPLCONFIGDIR",
     str(REPORTS_DIR / ".matplotlib-cache"),
 )
+for _thread_variable in (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ.setdefault(_thread_variable, "1")
 
 RANDOM_STATE = 20260730
+CPU_THREAD_COUNT = 1
 COURSE_WEEKS = 14
 EVALUATION_CUTOFFS = (4, 7, 10, 14)
 COURSES = ("PY101", "DS102", "ML201", "ST203", "AI204")
@@ -29,6 +37,16 @@ TARGETS = {
     "outcome": "course_outcome",
     "pace": "learning_pace",
 }
+
+# Deliberately chosen after reviewing the validation comparison. These are the
+# reproducible production choices for the next experiment, not the automatic
+# validation winners. Validation ranks remain available in the reports.
+USER_SELECTED_MODELS = {
+    "gpa": "mlp_adam",
+    "outcome": "linear",
+    "pace": "linear",
+}
+SELECTION_METHOD = "user_configured_after_validation_review"
 
 TASK_TYPES = {
     "gpa": "regression",

@@ -1,101 +1,82 @@
-# Reproducing SRG-Tracker V2.2
+# Reproducing and using SRG-Tracker V2.3
 
-This guide explains what each command does so the project can be reproduced
-without AI assistance.
+V2.3 ships three ready-to-use, user-configured models:
 
-## 1. Create the environment
+- final GPA: MLP with Adam;
+- course outcome: logistic regression;
+- learning pace: logistic regression.
 
-Open PowerShell in the repository root:
+The repository also contains the validation comparison that records their ranks
+and metrics. The selected models are a documented configuration choice, not a
+claim that they are the automatic winners of every validation metric.
+
+## 1. Prerequisites and environment
+
+Use Windows PowerShell and Python 3.12. Verify the interpreter first:
 
 ```powershell
-python -m venv .venv
+py -3.12 --version
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-The project uses pandas and NumPy for data, scikit-learn for preprocessing and
-baselines, XGBoost and CatBoost for boosting, PyTorch for GRU, Matplotlib/Seaborn
-for reports, and ipywidgets for the notebook product.
+`requirements.txt` pins the direct package versions used for V2.3. The project
+also fixes the random seed and CPU thread count in `src/config.py`.
 
-## 2. Generate the data
+If PowerShell blocks activation, run the commands through
+`.\.venv\Scripts\python.exe`; activation is optional. If `py -3.12` is not
+available, install Python 3.12 from python.org and reopen PowerShell.
+
+## 2. Try the ready models
+
+The repository contains the selected artifacts in `models/`. After installation,
+start Jupyter and open the interactive product notebook:
 
 ```powershell
-python -m src.generate_dataset
+.\.venv\Scripts\python.exe -m jupyter notebook
 ```
 
-This creates a new deterministic split using seed `20260730`. The generator:
+Run `notebooks/final_product.ipynb` from top to bottom. It loads
+`models/selection.json`, validates the entered ordered weekly history, and
+returns all three predictions. Use one student-course attempt, consecutive weeks,
+and only information available by the chosen cutoff.
 
-1. draws stable student traits and course/semester effects;
-2. generates temporally dependent weekly activity;
-3. creates midterm and final audit data at their allowed times;
-4. constructs final score, GPA, outcome, and pace labels;
-5. assigns whole students to train, validation, or test;
-6. validates timing, ranges, counts, and overlap;
-7. saves the quality report.
+For a compact non-interactive example, run `notebooks/03_demo.ipynb`.
 
-## 3. Run EDA
+Never provide GPA, final course score, course outcome, learning pace, or
+`final_exam_score_audit_only` as inputs. The full input contract is in
+`docs/input_contract.md`.
+
+## 3. Reproduce the data and validation comparison
+
+Run these commands from the repository root:
 
 ```powershell
-python -m src.eda
+.\.venv\Scripts\python.exe -m src.generate_dataset
+.\.venv\Scripts\python.exe -m src.eda
+.\.venv\Scripts\python.exe -m src.train
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-EDA checks row and student counts, missing values, target distributions, and
-student overlap. It writes tables to `reports/metrics/` and figures to
-`reports/figures/`.
+The generator uses seed `20260730`, keeps students disjoint between train,
+validation, and test, and creates examples only from weeks available at each
+cutoff. `src.train` compares all candidates on validation data and then freezes
+the V2.3 configured mapping from `src.config.USER_SELECTED_MODELS`:
 
-Missing assignment, quiz, and midterm values are expected when those assessments
-have not occurred. They must not be filled from future weeks.
-
-## 4. Run contract tests
-
-```powershell
-python -m unittest discover -s tests -v
+```text
+gpa     -> mlp_adam
+outcome -> linear
+pace    -> linear
 ```
 
-The tests cover:
+The frozen manifest records the seed, selection method, validation metric, and
+validation rank in `models/selection.json`.
 
-- GPA boundary conversion;
-- score-weight sum;
-- forbidden model columns;
-- history order and cutoff validation;
-- midterm timing;
-- required assignment and quiz;
-- aggregate future-week isolation;
-- explicit GRU padding mask;
-- student-disjoint splits;
-- saved full-history inference.
+## 4. Evaluate candidate models
 
-Fix a failed test before training. Do not weaken a leakage test to make it pass.
-
-## 5. Train and select models
-
-```powershell
-python -m src.train
-```
-
-The command builds one training example per attempt at weeks 4, 7, 10, and 14.
-It compares:
-
-- frozen V1 latest-week reference;
-- Dummy baseline;
-- Ridge or Logistic Regression;
-- HistGradientBoosting;
-- XGBoost;
-- CatBoost;
-- MLP with Adam;
-- shared multi-task GRU with Adam.
-
-Tabular models receive deterministic history aggregates. GRU receives the raw
-chronological weekly tensor. `pack_padded_sequence` ensures padded weeks are not
-treated as evidence.
-
-Only train and validation are used here. Winners are written to
-`models/selection.json` before test evaluation.
-
-## 6. Understand the rankings
-
-Open `notebooks/02_baseline.ipynb` or inspect:
+Inspect the validation rankings before changing the configured model mapping:
 
 ```text
 reports/metrics/gpa_model_ranking.csv
@@ -104,64 +85,37 @@ reports/metrics/pace_model_ranking.csv
 reports/metrics/validation_model_comparison.csv
 ```
 
-GPA is ranked by ascending RMSE. Outcome is ranked by descending enroll F1. Pace
-is ranked by descending macro-F1. The tables also contain serialized size,
-training time, and median inference time after warm-up.
+Use the task-specific primary metric:
 
-## 7. Run final evaluation once
+- GPA: lower RMSE is better;
+- course outcome: higher `f1_enroll` is better;
+- learning pace: higher macro-F1 is better.
 
-```powershell
-python -m src.final_evaluation
-```
+The tables additionally provide training time, median inference time, serialized
+model size, and class-specific metrics. Do not call a configured model an
+automatic winner when its validation rank is lower; preserve both the choice and
+the ranking in the report.
 
-Do this only after selection is frozen. The module reads the held-out test split,
-writes final metrics and diagnostics, and creates a local guard file. It refuses
-to rerun automatically because repeatedly inspecting test results would turn the
-test split into another validation split.
+## 5. Held-out test evaluation
 
-The evaluation saves:
-
-- overall and cutoff metrics;
-- row-level predictions;
-- course/cutoff error breakdown;
-- outcome and pace calibration;
-- normalized confusion matrices;
-- observed-vs-predicted GPA;
-- environment versions.
-
-## 8. Use the notebooks
-
-Start Jupyter:
+Run the following command exactly once and only after a new selection has been
+frozen:
 
 ```powershell
-jupyter notebook
+.\.venv\Scripts\python.exe -m src.final_evaluation
 ```
 
-Run in order:
+It writes final metrics, predictions, diagnostic plots, package versions, and a
+rerun guard. Do not retrain or replace the selection after inspecting held-out
+metrics. To evaluate another configuration, create a new experiment with a new
+seed and untouched test split.
 
-1. `01_eda.ipynb` — data structure, automated tests, missingness, targets;
-2. `02_baseline.ipynb` — validation ranking and frozen selection;
-3. `03_demo.ipynb` — one synthetic week-7 history;
-4. `04_final_evaluation.ipynb` — saved held-out results;
-5. `final_product.ipynb` — editable interactive history form.
+The held-out reports currently stored in this repository are historical results
+from the earlier automatic-selection experiment; they are not metrics for the
+V2.3 MLP/linear/linear configuration.
 
-Notebook logic imports from `src`; changing only a notebook must not create a
-different training or evaluation implementation.
+## 6. Interpretation and responsible use
 
-## 9. Enter a custom history
-
-Open `final_product.ipynb`, edit the JSON history, and press **Run prediction**.
-Keep all weeks consecutive and use the same attempt, course, and semester.
-
-Do not enter final score, GPA, outcome, pace, or final-exam audit data. See
-`docs/input_contract.md` for examples and validation rules.
-
-## 10. Responsible interpretation
-
-The model learned patterns created by a synthetic generator. A high probability
-does not prove that a real student will fail. The output should only demonstrate
-an engineering workflow. A real deployment would require approved data access,
-privacy review, representativeness and fairness evaluation, calibration on the
-institution, human oversight, monitoring, and an appeal process.
-
-V3.0 may add a dedicated frontend. Frontend work is intentionally outside V2.2.
+This is a synthetic-data educational capstone. Its outputs are advisory prompts
+for human review, never automatic ranking, grading, enrolment, discipline, or
+student-access decisions.

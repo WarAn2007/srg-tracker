@@ -21,6 +21,7 @@ from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier, XGBRegressor
 
 from src.config import (
+    CPU_THREAD_COUNT,
     EVALUATION_CUTOFFS,
     GRU_MODEL_FILENAME,
     METRICS_DIR,
@@ -28,7 +29,9 @@ from src.config import (
     MODELS_DIR,
     RANDOM_STATE,
     SELECTION_FILENAME,
+    SELECTION_METHOD,
     TARGETS,
+    USER_SELECTED_MODELS,
     V1_FEATURE_COLUMNS,
     V1_REFERENCE_FILENAMES,
 )
@@ -99,7 +102,7 @@ def candidate_estimators(task: str) -> dict[str, Any]:
                 colsample_bytree=0.9,
                 objective="reg:squarederror",
                 random_state=RANDOM_STATE,
-                n_jobs=-1,
+                n_jobs=CPU_THREAD_COUNT,
             ),
             "catboost": CatBoostRegressor(
                 iterations=180,
@@ -109,6 +112,7 @@ def candidate_estimators(task: str) -> dict[str, Any]:
                 random_seed=RANDOM_STATE,
                 verbose=False,
                 allow_writing_files=False,
+                thread_count=CPU_THREAD_COUNT,
             ),
             "mlp_adam": MLPRegressor(
                 hidden_layer_sizes=(64, 32),
@@ -140,7 +144,7 @@ def candidate_estimators(task: str) -> dict[str, Any]:
             objective="binary:logistic" if task == "outcome" else "multi:softprob",
             eval_metric="logloss" if task == "outcome" else "mlogloss",
             random_state=RANDOM_STATE,
-            n_jobs=-1,
+            n_jobs=CPU_THREAD_COUNT,
         ),
         "catboost": CatBoostClassifier(
             iterations=180,
@@ -151,6 +155,7 @@ def candidate_estimators(task: str) -> dict[str, Any]:
             verbose=False,
             allow_writing_files=False,
             auto_class_weights="Balanced",
+            thread_count=CPU_THREAD_COUNT,
         ),
         "mlp_adam": MLPClassifier(
             hidden_layer_sizes=(64, 32),
@@ -295,7 +300,10 @@ def evaluate_v1_references(validation_frame: pd.DataFrame) -> list[dict[str, obj
     for task, filename in V1_REFERENCE_FILENAMES.items():
         path = MODELS_DIR / filename
         if not path.exists():
-            raise FileNotFoundError(f"Missing V1 reference artifact: {path}")
+            print(
+                f"Skipping unavailable V1 reference for {task}: {path}"
+            )
+            continue
         model = joblib.load(path)
         if task == "gpa":
             raw = model.predict(features)
@@ -378,8 +386,8 @@ def evaluate_gru_candidate(
     return records, size
 
 
-def select_winners(comparison: pd.DataFrame) -> dict[str, dict[str, object]]:
-    """Freeze the best validation model per task."""
+def select_configured_models(comparison: pd.DataFrame) -> dict[str, dict[str, object]]:
+    """Freeze the documented user-selected model for every task."""
     overall = comparison.loc[comparison["cutoff"].astype(str) == "all"].copy()
     selection: dict[str, dict[str, object]] = {}
     for task, metric, ascending in (
@@ -390,13 +398,22 @@ def select_winners(comparison: pd.DataFrame) -> dict[str, dict[str, object]]:
         rows = overall.loc[overall["task"] == task].sort_values(
             [metric, "model"],
             ascending=[ascending, True],
-        )
-        winner = rows.iloc[0]
+        ).reset_index(drop=True)
+        configured_model = USER_SELECTED_MODELS[task]
+        match = rows.loc[rows["model"] == configured_model]
+        if len(match) != 1:
+            raise ValueError(
+                f"Configured model {configured_model!r} for {task!r} "
+                "is not available in the validation comparison."
+            )
+        chosen = match.iloc[0]
         selection[task] = {
-            "model": str(winner["model"]),
-            "representation": str(winner["representation"]),
+            "model": str(chosen["model"]),
+            "representation": str(chosen["representation"]),
             "primary_metric": metric,
-            "validation_value": float(winner[metric]),
+            "validation_value": float(chosen[metric]),
+            "validation_rank": int(match.index[0]) + 1,
+            "selection_method": SELECTION_METHOD,
         }
     return selection
 
@@ -449,6 +466,8 @@ def save_selected_artifacts(
     save_json(
         {
             "selection_frozen_before_test": True,
+            "selection_method": SELECTION_METHOD,
+            "configured_models": USER_SELECTED_MODELS,
             "seed": RANDOM_STATE,
             "cutoffs": list(EVALUATION_CUTOFFS),
             "tasks": selection,
@@ -476,15 +495,18 @@ def write_comparison_reports(
         "Models were selected without reading test targets or test predictions.",
         "The V1 reference uses the latest weekly snapshot; tabular candidates use "
         "aggregated history; GRU uses the raw masked weekly sequence.",
+        "V1 reference rows are included only when their frozen artifacts are "
+        "available; missing artifacts are reported and do not block V2.3 training.",
         "",
-        "## Frozen selection",
+        "## Frozen configured selection",
         "",
     ]
     for task, details in selection.items():
         lines.append(
             f"- **{task}**: `{details['model']}` using "
             f"`{details['representation']}`; {details['primary_metric']}="
-            f"{details['validation_value']:.4f}."
+            f"{details['validation_value']:.4f}; validation rank "
+            f"{details['validation_rank']}."
         )
     lines.extend(
         [
@@ -539,7 +561,7 @@ def main() -> None:
     )
 
     comparison = pd.DataFrame(records)
-    selection = select_winners(comparison)
+    selection = select_configured_models(comparison)
     save_selected_artifacts(
         selection,
         train_examples,

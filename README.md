@@ -2,7 +2,7 @@
 
 **Student:** IBRAGIMOV ANVAR
 **Selected project track:** SRG Tracker - Student Ranking & GPA Tracker
-**Version:** V2.2 (beta research prototype)
+**Version:** V2.3 (reproducible research prototype)
 
 > Scope note: despite the track title, this version does **not** rank students. It is an advisory early-warning research prototype that predicts academic signals from a student's own course history.
 
@@ -12,7 +12,7 @@ Students and instructors need an early, reproducible indication of academic prog
 
 ## 2. Selected project track
 
-**SRG Tracker - Student Ranking & GPA Tracker.** The implemented V2.2 scope is GPA tracking and early warning; individual ranking is explicitly out of scope.
+**SRG Tracker - Student Ranking & GPA Tracker.** The implemented V2.3 scope is GPA tracking and early warning; individual ranking is explicitly out of scope.
 
 ## 3. Dataset source
 
@@ -39,9 +39,9 @@ flowchart LR
     H["Ordered weekly history through cutoff"] --> V["Input validation and leakage checks"]
     V --> A["History aggregates"]
     V --> S["Masked raw sequence"]
-    A --> G1["CatBoost: final GPA"]
-    S --> G2["Shared GRU: course outcome"]
-    A --> G3["XGBoost: learning pace"]
+    A --> G1["MLP Adam: final GPA"]
+    A --> G2["Logistic regression: course outcome"]
+    A --> G3["Logistic regression: learning pace"]
     G1 --> O["Advisory prediction report"]
     G2 --> O
     G3 --> O
@@ -52,23 +52,23 @@ The generator creates student-disjoint train, validation, and final-test splits.
 
 ## 6. Models and approaches tested
 
-The comparison included a frozen V1 latest-snapshot reference, Dummy baselines, linear models, HistGradientBoosting, XGBoost, CatBoost, MLP with Adam, and a masked raw-sequence GRU with Adam. V2.2 evaluates aggregate-history models alongside the GRU so that sequence learning remains a required part of the research.
+The comparison includes Dummy baselines, linear models, HistGradientBoosting, XGBoost, CatBoost, MLP with Adam, and a masked raw-sequence GRU with Adam. V2.3 keeps the complete validation comparison while shipping a documented, reproducible model configuration.
 
 The complete validation ranking, including evaluation metric, training time, median inference time, serialized weight, and neural parameter count, is stored in [validation_model_comparison.csv](reports/metrics/validation_model_comparison.csv). Model artefacts and the frozen selection manifest are in `models/`.
 
 ## 7. Final models and justification
 
-Each task uses the validation winner for its own primary metric. This is more appropriate than forcing one algorithm to solve three different target types.
+The production configuration uses a documented user choice after validation review. The complete ranking remains available, so this decision is reproducible and does not misrepresent the automatic validation winners.
 
 | Task | Selected model | Winner validation result | 2nd place | 3rd place | Why selected |
 | --- | --- | --- | --- | --- | --- |
-| Final GPA | CatBoost, aggregated history | RMSE **0.7277**; 1.11 s training; 220 KB | XGBoost: RMSE 0.7350; 0.66 s; 317 KB | MLP: RMSE 0.7376; 1.19 s; 170 KB | Lowest GPA RMSE; it improves on both alternatives while retaining a compact artefact. |
-| Course outcome | Shared GRU, raw sequence | enroll F1 **0.8259**; 19.95 s; 50 KB | XGBoost: F1 0.8257; 0.69 s; 298 KB | Logistic regression: F1 0.8247; 0.19 s; 11 KB | Highest F1, although the margin is small. It remains selected because it learns directly from ordered weekly histories and is a required research comparison. |
-| Learning pace | XGBoost, aggregated history | macro-F1 **0.7692**; 1.79 s; 877 KB | CatBoost: macro-F1 0.7688; 1.46 s; 406 KB | Logistic regression: macro-F1 0.7600; 0.51 s; 12 KB | Highest macro-F1, which weights all pace classes equally; the gain over CatBoost is small and should be rechecked on real data. |
+| Final GPA | MLP with Adam, aggregated history | RMSE 0.7376; rank 3; 1.01 s training; 170 KB | CatBoost: RMSE **0.7277**; rank 1 | XGBoost: RMSE 0.7350; rank 2 | Configured user choice. Uses a compact neural model with fixed seed and single-thread CPU settings. |
+| Course outcome | Logistic regression, aggregated history | enroll F1 0.8247; rank 3; 0.14 s training; 11 KB | GRU: F1 **0.8259**; rank 1 | XGBoost: F1 0.8257; rank 2 | Configured user choice. It is compact, fast, and straightforward to inspect. |
+| Learning pace | Logistic regression, aggregated history | macro-F1 0.7600; rank 3; 0.59 s training; 12 KB | XGBoost: macro-F1 **0.7692**; rank 1 | CatBoost: macro-F1 0.7688; rank 2 | Configured user choice. It is compact, fast, and straightforward to inspect. |
 
 ## 8. Evaluation metrics and results
 
-Model selection used validation data only: GPA RMSE, `enroll` F1 for course outcome, and macro-F1 for learning pace. The final test split remained untouched until selection was frozen.
+Model selection uses validation data only: GPA RMSE, `enroll` F1 for course outcome, and macro-F1 for learning pace. The configured mapping lives in `src/config.py`; it, the seed, package versions, and single-thread CPU settings are stored with the experiment. The final test split must remain untouched until this selection is frozen.
 
 | Task | Final held-out test results |
 | --- | --- |
@@ -78,14 +78,19 @@ Model selection used validation data only: GPA RMSE, `enroll` F1 for course outc
 
 Results are also measured at cutoffs 4, 7, 10, and 14. Detailed metrics, calibration, error slices, figures, and held-out predictions are in `reports/metrics/`, `reports/figures/`, and `reports/predictions/`.
 
+The held-out results currently stored in the repository belong to the earlier
+automatic-selection experiment. They do not evaluate the configured MLP/linear/
+linear combination. Evaluate that combination only in a new experiment with a
+new seed and untouched test split.
+
 ## 9. Installation instructions
 
-In PowerShell, clone or download the repository, then run:
+In PowerShell, clone or download the repository, then run with Python 3.12:
 
 ```powershell
-python -m venv .venv
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
 ## 10. Training instructions
@@ -93,17 +98,30 @@ python -m pip install -r requirements.txt
 Generate the deterministic data, train the validation candidates, freeze the selection, and run tests:
 
 ```powershell
-python -m src.generate_dataset
-python -m src.eda
-python -m src.train
-python -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m src.generate_dataset
+.\.venv\Scripts\python.exe -m src.eda
+.\.venv\Scripts\python.exe -m src.train
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Run `python -m src.final_evaluation` only after `models/selection.json` is frozen. It creates a local guard to discourage repeated held-out-test evaluation during model selection.
+Run `.\.venv\Scripts\python.exe -m src.final_evaluation` only after `models/selection.json` is frozen. It creates a local guard to discourage repeated held-out-test evaluation during model selection.
 
-## 11. Demo and inference instructions (Colab-first)
+For a new reproducible experiment, use a fresh seed and test split. Do not replace a frozen selection after a held-out evaluation has been recorded.
 
-This beta version is notebook-based; it has no application or API. To run it in Google Colab:
+## 11. Demo and inference instructions
+
+Ready V2.3 artifacts are included in `models/`. After installing dependencies,
+start the local notebook server:
+
+```powershell
+.\.venv\Scripts\python.exe -m jupyter notebook
+```
+
+Run `notebooks/final_product.ipynb` to enter a validated weekly history and
+obtain predictions from the ready models. `notebooks/03_demo.ipynb` provides a
+shorter example. For a full reproduction, use [instructions.md](instructions.md).
+
+To run in Google Colab:
 
 1. Open Colab, choose **File → Open notebook → GitHub**, and manually paste the URL of your repository.
 2. Open a notebook, for example `notebooks/final_product.ipynb`.
@@ -118,7 +136,7 @@ This beta version is notebook-based; it has no application or API. To run it in 
 4. Run the notebook from top to bottom. The notebooks detect `/content/SRG-Tracker` automatically after cloning.
 5. For a guided local demonstration, run `notebooks/03_demo.ipynb`; for the widget-based product, run `notebooks/final_product.ipynb`.
 
-An interactive React frontend is planned for V3.0 and is not part of this beta release.
+V2.3 is notebook-based and has no web frontend or API.
 
 ## 12. Example input and output
 
@@ -152,7 +170,7 @@ See [docs/input_contract.md](docs/input_contract.md) for the full input contract
 - Metrics are based on one deterministic synthetic scenario and may shift with different curricula or data-generating assumptions.
 - The output is predictive, not causal; it cannot prove why a student is struggling or what intervention will help.
 - The pace model's advantage over the second-place model is small.
-- There is no production authentication, data storage, API, React interface, or real-LMS integration in V2.2.
+- There is no production authentication, data storage, API, React interface, or real-LMS integration in V2.3.
 
 ## 14. Responsible AI considerations
 
@@ -169,6 +187,7 @@ data/processed/       generated student-disjoint CSV splits and quality report
 data/metadata/        dataset card
 docs/                 input contract and project documentation
 models/               reference, candidate, selected models, and selection manifest
+Capstone_Project.docx final project document
 notebooks/            EDA, baseline, demo, final evaluation, and product notebooks
 reports/metrics/      model comparison and evaluation tables
 reports/figures/      diagnostic and exploratory figures

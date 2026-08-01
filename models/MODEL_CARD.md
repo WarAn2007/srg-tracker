@@ -1,13 +1,16 @@
-# SRG-Tracker V2.2 model card
+# SRG-Tracker V2.3 model card
 
-## Frozen selection
+## Configured production selection
 
-- GPA: CatBoost on aggregated history.
-- Course outcome: shared GRU outcome head on raw masked weekly sequences.
-- Learning pace: XGBoost on aggregated history.
+- GPA: MLP with Adam on aggregated history (validation RMSE 0.7376; rank 3).
+- Course outcome: logistic regression on aggregated history (enroll F1 0.8247; rank 3).
+- Learning pace: logistic regression on aggregated history (macro-F1 0.7600; rank 3).
 
-Selection used validation only. `selection.json` was written before the held-out
-test evaluation.
+These are deliberate user-configured production choices made after validation
+review, not automatic validation winners. The mapping is version-controlled in
+`src/config.py` as `USER_SELECTED_MODELS`; `selection.json` records the method,
+seed, metric, and validation rank before a held-out test evaluation in a new
+experiment.
 
 ## Inputs and outputs
 

@@ -12,6 +12,7 @@ from src.config import (
     FINAL_SCORE_WEIGHTS,
     FORBIDDEN_MODEL_COLUMNS,
     RAW_WEEKLY_FEATURE_COLUMNS,
+    USER_SELECTED_MODELS,
 )
 from src.eda import check_student_disjoint_splits
 from src.features import aggregate_history, build_sequence
@@ -19,6 +20,7 @@ from src.history import validate_history
 from src.inference import predict_history
 from src.labels import score_to_gpa
 from src.preprocessing import history_from_group, load_split
+from src.train import select_configured_models
 
 
 def valid_history(last_week: int = 7) -> list[dict[str, object]]:
@@ -167,6 +169,28 @@ class GeneratedSplitTests(unittest.TestCase):
         )
         self.assertGreaterEqual(result["predicted_final_gpa"], 0.0)
         self.assertLessEqual(result["predicted_final_gpa"], 4.5)
+
+
+class SelectionPolicyTests(unittest.TestCase):
+    def test_configured_models_are_frozen_with_validation_metadata(self) -> None:
+        comparison = pd.DataFrame(
+            [
+                {"task": "gpa", "model": "catboost", "representation": "aggregated_history", "cutoff": "all", "rmse": 0.72},
+                {"task": "gpa", "model": "mlp_adam", "representation": "aggregated_history", "cutoff": "all", "rmse": 0.74},
+                {"task": "outcome", "model": "gru", "representation": "raw_sequence", "cutoff": "all", "f1_enroll": 0.83},
+                {"task": "outcome", "model": "linear", "representation": "aggregated_history", "cutoff": "all", "f1_enroll": 0.82},
+                {"task": "pace", "model": "xgboost", "representation": "aggregated_history", "cutoff": "all", "macro_f1": 0.77},
+                {"task": "pace", "model": "linear", "representation": "aggregated_history", "cutoff": "all", "macro_f1": 0.76},
+            ]
+        )
+        selection = select_configured_models(comparison)
+        self.assertEqual(
+            {task: details["model"] for task, details in selection.items()},
+            USER_SELECTED_MODELS,
+        )
+        self.assertEqual(selection["gpa"]["validation_rank"], 2)
+        self.assertEqual(selection["outcome"]["validation_rank"], 2)
+        self.assertEqual(selection["pace"]["validation_rank"], 2)
 
 
 if __name__ == "__main__":
