@@ -1,11 +1,11 @@
 # Training and deployment guide
 
-`version-2-3` is the training project. `web-version` is the web
+`training-version` is the training project. `web-version` is the web
 application branch that loads packaged `.joblib` models. Keep them as separate
 projects: train and evaluate here, then explicitly deploy only approved model
 artifacts to the web project.
 
-These instructions assume two sibling checkouts: `version-2-3` for training and `web-version` for the web application.
+**THIS INSTRUCTIONS REQUIRE TO BOTH BRANCHES TO BE ALLOCATED IN THE SAME BIG FOLDER: main/training and main/web**
 
 
 ## 1. Install the training environment
@@ -108,20 +108,20 @@ experiment checkout. Do not repeatedly tune models against the held-out test.
 
 ## 5. Deploy models to the web project
 
-The `web-version` checkout requires `gpa_model.joblib`, `outcome_model.joblib`,
+`/web` requires `gpa_model.joblib`, `outcome_model.joblib`,
 `pace_model.joblib`, and `selection.json` in its `models/` directory.
 
 To replace only the GPA model while retaining the existing outcome and pace
 models in the web application, run from this training project:
 
 ```powershell
-python -m src.deploy_models --web-project ../web-version --tasks gpa
+python -m src.deploy_models --web-project ../web --tasks gpa
 ```
 
 To replace all three models:
 
 ```powershell
-python -m src.deploy_models --web-project ../web-version --tasks gpa outcome pace
+python -m src.deploy_models --web-project ../web --tasks gpa outcome pace
 ```
 
 The deploy command copies only the requested artifacts and merges only those

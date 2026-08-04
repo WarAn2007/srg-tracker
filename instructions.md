@@ -1,7 +1,7 @@
 # SRG-Tracker V2.3: train and deploy models
 
-`version-2-3` branch is the training project. It creates or imports datasets, trains
-models, and exports approved artifacts to the separate `web-version` checkout in your environment, the local web
+`training-version` branch is the training project. It creates or imports datasets, trains
+models, and exports approved artifacts to the `web-version` branch folder in your environment, the local web
 application.
 
 ## Setup
