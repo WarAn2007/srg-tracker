@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import argparse
 import time
 import warnings
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import joblib
 import numpy as np
@@ -248,6 +249,7 @@ def _metric_records(
 def train_tabular_candidates(
     train_examples: pd.DataFrame,
     validation_examples: pd.DataFrame,
+    tasks: Sequence[str],
 ) -> tuple[list[dict[str, object]], dict[tuple[str, str], Pipeline]]:
     """Fit required aggregate-history candidates using train only."""
     train_x = get_features(train_examples)
@@ -255,7 +257,8 @@ def train_tabular_candidates(
     cutoffs = validation_examples["cutoff_week"].to_numpy(dtype=int)
     records: list[dict[str, object]] = []
     fitted: dict[tuple[str, str], Pipeline] = {}
-    for task, target_column in TARGETS.items():
+    for task in tasks:
+        target_column = TARGETS[task]
         train_y = encode_target(task, train_examples[target_column])
         true = validation_examples[target_column].to_numpy()
         for name, estimator in candidate_estimators(task).items():
@@ -293,6 +296,8 @@ def train_tabular_candidates(
 
 def evaluate_v1_references(validation_frame: pd.DataFrame) -> list[dict[str, object]]:
     """Evaluate frozen V1 latest-week models on the new validation attempts."""
+    if not any((MODELS_DIR / filename).exists() for filename in V1_REFERENCE_FILENAMES.values()):
+        return []
     examples = build_latest_week_examples(validation_frame)
     features = examples.loc[:, V1_FEATURE_COLUMNS]
     cutoffs = examples["week"].to_numpy(dtype=int)
@@ -386,20 +391,28 @@ def evaluate_gru_candidate(
     return records, size
 
 
-def select_configured_models(comparison: pd.DataFrame) -> dict[str, dict[str, object]]:
+def select_configured_models(
+    comparison: pd.DataFrame,
+    tasks: Sequence[str] | None = None,
+    configured_models: Mapping[str, str] | None = None,
+) -> dict[str, dict[str, object]]:
     """Freeze the documented user-selected model for every task."""
     overall = comparison.loc[comparison["cutoff"].astype(str) == "all"].copy()
     selection: dict[str, dict[str, object]] = {}
+    selected_tasks = tuple(TARGETS) if tasks is None else tuple(tasks)
+    selected_models = USER_SELECTED_MODELS if configured_models is None else configured_models
     for task, metric, ascending in (
         ("gpa", "rmse", True),
         ("outcome", "f1_enroll", False),
         ("pace", "macro_f1", False),
     ):
+        if task not in selected_tasks:
+            continue
         rows = overall.loc[overall["task"] == task].sort_values(
             [metric, "model"],
             ascending=[ascending, True],
         ).reset_index(drop=True)
-        configured_model = USER_SELECTED_MODELS[task]
+        configured_model = selected_models[task]
         match = rows.loc[rows["model"] == configured_model]
         if len(match) != 1:
             raise ValueError(
@@ -422,8 +435,9 @@ def save_selected_artifacts(
     selection: dict[str, dict[str, object]],
     train_examples: pd.DataFrame,
     validation_examples: pd.DataFrame,
-    gru_model: MultiTaskGRU,
-    encoder: SequenceEncoder,
+    gru_model: MultiTaskGRU | None = None,
+    encoder: SequenceEncoder | None = None,
+    configured_models: Mapping[str, str] | None = None,
 ) -> None:
     """Refit selected tabular models on train+validation and save frozen artifacts."""
     combined = pd.concat([train_examples, validation_examples], ignore_index=True)
@@ -454,20 +468,24 @@ def save_selected_artifacts(
                 )
         joblib.dump(artifact, MODELS_DIR / MODEL_FILENAMES[task])
 
-    checkpoint = {
-        "state_dict": gru_model.state_dict(),
-        "input_size": gru_model.input_size,
-        "hidden_size": gru_model.hidden_size,
-        "encoder": encoder.to_dict(),
-        "parameter_count": gru_model.parameter_count(),
-        "seed": RANDOM_STATE,
-    }
-    torch.save(checkpoint, MODELS_DIR / GRU_MODEL_FILENAME)
+    if gru_model is not None and encoder is not None:
+        checkpoint = {
+            "state_dict": gru_model.state_dict(),
+            "input_size": gru_model.input_size,
+            "hidden_size": gru_model.hidden_size,
+            "encoder": encoder.to_dict(),
+            "parameter_count": gru_model.parameter_count(),
+            "seed": RANDOM_STATE,
+        }
+        torch.save(checkpoint, MODELS_DIR / GRU_MODEL_FILENAME)
     save_json(
         {
             "selection_frozen_before_test": True,
             "selection_method": SELECTION_METHOD,
-            "configured_models": USER_SELECTED_MODELS,
+            "configured_models": {
+                task: (USER_SELECTED_MODELS if configured_models is None else configured_models)[task]
+                for task in selection
+            },
             "seed": RANDOM_STATE,
             "cutoffs": list(EVALUATION_CUTOFFS),
             "tasks": selection,
@@ -483,7 +501,7 @@ def write_comparison_reports(
     """Save complete and task-specific ranked validation reports."""
     ranked = add_task_rankings(comparison)
     ranked.to_csv(METRICS_DIR / "validation_model_comparison.csv", index=False)
-    for task in TARGETS:
+    for task in selection:
         task_rows = ranked.loc[
             (ranked["task"] == task)
             & (ranked["cutoff"].astype(str) == "all")
@@ -523,6 +541,29 @@ def write_comparison_reports(
 
 def main() -> None:
     """Run validation-only selection and save frozen production candidates."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        choices=list(TARGETS),
+        default=list(TARGETS),
+        help="Tasks to train; use `gpa` to retrain only the GPA model.",
+    )
+    parser.add_argument(
+        "--selected-model",
+        action="append",
+        default=[],
+        metavar="TASK=MODEL",
+        help="Override the configured candidate for one selected task, for example gpa=linear.",
+    )
+    args = parser.parse_args()
+    tasks = tuple(dict.fromkeys(args.tasks))
+    configured_models = dict(USER_SELECTED_MODELS)
+    for assignment in args.selected_model:
+        task, separator, model = assignment.partition("=")
+        if not separator or task not in tasks or model not in candidate_estimators(task):
+            parser.error("--selected-model must be TASK=MODEL for a selected available candidate.")
+        configured_models[task] = model
     final_state = METRICS_DIR / "final_evaluation_state.json"
     if final_state.exists():
         raise RuntimeError(
@@ -531,43 +572,41 @@ def main() -> None:
             "Start a new experiment with a new seed and test split instead."
         )
     ensure_directories(MODELS_DIR, METRICS_DIR)
-    train_frame = load_split("train")
-    validation_frame = load_split("validation")
+    train_frame = load_split("train", tasks=tasks)
+    validation_frame = load_split("validation", tasks=tasks)
     print("Building aggregated history examples...")
-    train_examples = build_aggregated_examples(train_frame)
-    validation_examples = build_aggregated_examples(validation_frame)
+    train_examples = build_aggregated_examples(train_frame, tasks=tasks)
+    validation_examples = build_aggregated_examples(validation_frame, tasks=tasks)
 
-    records, _ = train_tabular_candidates(train_examples, validation_examples)
-    records.extend(evaluate_v1_references(validation_frame))
+    records, _ = train_tabular_candidates(train_examples, validation_examples, tasks)
+    if tasks == tuple(TARGETS):
+        records.extend(evaluate_v1_references(validation_frame))
 
-    print("Building raw sequence examples...")
-    encoder = SequenceEncoder.fit(train_frame)
-    train_sequences = build_sequence_dataset(train_frame, encoder)
-    validation_sequences = build_sequence_dataset(validation_frame, encoder)
-    gru_model, gru_history, gru_seconds = train_gru(
-        train_sequences,
-        validation_sequences,
-        encoder.input_size,
-    )
-    gru_records, _ = evaluate_gru_candidate(
-        gru_model,
-        validation_sequences,
-        gru_seconds,
-    )
-    records.extend(gru_records)
-    pd.DataFrame(gru_history).to_csv(
-        METRICS_DIR / "gru_training_history.csv",
-        index=False,
-    )
+    gru_model: MultiTaskGRU | None = None
+    encoder: SequenceEncoder | None = None
+    if tasks == tuple(TARGETS):
+        print("Building raw sequence examples...")
+        encoder = SequenceEncoder.fit(train_frame)
+        train_sequences = build_sequence_dataset(train_frame, encoder)
+        validation_sequences = build_sequence_dataset(validation_frame, encoder)
+        gru_model, gru_history, gru_seconds = train_gru(
+            train_sequences,
+            validation_sequences,
+            encoder.input_size,
+        )
+        gru_records, _ = evaluate_gru_candidate(gru_model, validation_sequences, gru_seconds)
+        records.extend(gru_records)
+        pd.DataFrame(gru_history).to_csv(METRICS_DIR / "gru_training_history.csv", index=False)
 
     comparison = pd.DataFrame(records)
-    selection = select_configured_models(comparison)
+    selection = select_configured_models(comparison, tasks, configured_models)
     save_selected_artifacts(
         selection,
         train_examples,
         validation_examples,
         gru_model,
         encoder,
+        configured_models,
     )
     write_comparison_reports(comparison, selection)
     print(json.dumps(selection, indent=2))

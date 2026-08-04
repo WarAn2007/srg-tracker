@@ -21,3 +21,7 @@ reports/metrics/final_evaluation_state.json
 .env
 .vscode/
 logs/ai/*.tmp
+
+# Private external datasets
+data/incoming/*.csv
+!data/incoming/.gitkeep

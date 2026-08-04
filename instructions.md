@@ -1,121 +1,76 @@
-# Reproducing and using SRG-Tracker V2.3
+# SRG-Tracker V2.3: train and deploy models
 
-V2.3 ships three ready-to-use, user-configured models:
+`version-2-3` branch is the training project. It creates or imports datasets, trains
+models, and exports approved artifacts to the separate `web-version` checkout in your environment, the local web
+application.
 
-- final GPA: MLP with Adam;
-- course outcome: logistic regression;
-- learning pace: logistic regression.
+## Setup
 
-The repository also contains the validation comparison that records their ranks
-and metrics. The selected models are a documented configuration choice, not a
-claim that they are the automatic winners of every validation metric.
-
-## 1. Prerequisites and environment
-
-Use Windows PowerShell and Python 3.12. Verify the interpreter first:
+Use Python 3.12 or newer from the training-project root:
 
 ```powershell
-py -3.12 --version
-py -3.12 -m venv .venv
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 ```
 
-`requirements.txt` pins the direct package versions used for V2.3. The project
-also fixes the random seed and CPU thread count in `src/config.py`.
+## Dataset options
 
-If PowerShell blocks activation, run the commands through
-`.\.venv\Scripts\python.exe`; activation is optional. If `py -3.12` is not
-available, install Python 3.12 from python.org and reopen PowerShell.
-
-## 2. Try the ready models
-
-The repository contains the selected artifacts in `models/`. After installation,
-start Jupyter and open the interactive product notebook:
+Create the deterministic synthetic dataset:
 
 ```powershell
-.\.venv\Scripts\python.exe -m jupyter notebook
+python -m src.generate_dataset
 ```
 
-Run `notebooks/final_product.ipynb` from top to bottom. It loads
-`models/selection.json`, validates the entered ordered weekly history, and
-returns all three predictions. Use one student-course attempt, consecutive weeks,
-and only information available by the chosen cutoff.
-
-For a compact non-interactive example, run `notebooks/03_demo.ipynb`.
-
-Never provide GPA, final course score, course outcome, learning pace, or
-`final_exam_score_audit_only` as inputs. The full input contract is in
-`docs/input_contract.md`.
-
-## 3. Reproduce the data and validation comparison
-
-Run these commands from the repository root:
+Or import private labelled data. Use
+`data/templates/training_records_template.csv` for the required weekly columns,
+then place your CSV in `data/incoming/` (this directory is ignored by Git):
 
 ```powershell
-.\.venv\Scripts\python.exe -m src.generate_dataset
-.\.venv\Scripts\python.exe -m src.eda
-.\.venv\Scripts\python.exe -m src.train
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+python -m src.data_import --input data/incoming/records.csv --tasks gpa
 ```
 
-The generator uses seed `20260730`, keeps students disjoint between train,
-validation, and test, and creates examples only from weeks available at each
-cutoff. `src.train` compares all candidates on validation data and then freezes
-the V2.3 configured mapping from `src.config.USER_SELECTED_MODELS`:
+The importer creates student-disjoint train, validation, and test splits. To
+import three supplied splits, pass `--train`, `--validation`, and `--test`
+instead. Never commit real student records.
 
-```text
-gpa     -> mlp_adam
-outcome -> linear
-pace    -> linear
-```
+## Selective training
 
-The frozen manifest records the seed, selection method, validation metric, and
-validation rank in `models/selection.json`.
-
-## 4. Evaluate candidate models
-
-Inspect the validation rankings before changing the configured model mapping:
-
-```text
-reports/metrics/gpa_model_ranking.csv
-reports/metrics/outcome_model_ranking.csv
-reports/metrics/pace_model_ranking.csv
-reports/metrics/validation_model_comparison.csv
-```
-
-Use the task-specific primary metric:
-
-- GPA: lower RMSE is better;
-- course outcome: higher `f1_enroll` is better;
-- learning pace: higher macro-F1 is better.
-
-The tables additionally provide training time, median inference time, serialized
-model size, and class-specific metrics. Do not call a configured model an
-automatic winner when its validation rank is lower; preserve both the choice and
-the ranking in the report.
-
-## 5. Held-out test evaluation
-
-Run the following command exactly once and only after a new selection has been
-frozen:
+Train GPA candidates only:
 
 ```powershell
-.\.venv\Scripts\python.exe -m src.final_evaluation
+python -m src.train --tasks gpa
 ```
 
-It writes final metrics, predictions, diagnostic plots, package versions, and a
-rerun guard. Do not retrain or replace the selection after inspecting held-out
-metrics. To evaluate another configuration, create a new experiment with a new
-seed and untouched test split.
+Train all configured tasks and the GRU comparison:
 
-The held-out reports currently stored in this repository are historical results
-from the earlier automatic-selection experiment; they are not metrics for the
-V2.3 MLP/linear/linear configuration.
+```powershell
+python -m src.train --tasks gpa outcome pace
+```
 
-## 6. Interpretation and responsible use
+Review `reports/metrics/validation_model_comparison.csv` before approving a
+model. The default V2.4 GPA configuration is MLP with Adam. To train and select
+the linear Ridge GPA candidate instead, run:
 
-This is a synthetic-data educational capstone. Its outputs are advisory prompts
-for human review, never automatic ranking, grading, enrolment, discipline, or
-student-access decisions.
+```powershell
+python -m src.train --tasks gpa --selected-model gpa=linear
+```
+
+The linear model is a deliberate simplicity-versus-accuracy trade-off; its
+recorded validation RMSE is 0.7750.
+
+## Deploy to the web application
+
+Deploy only the GPA artifact, preserving web outcome and pace models:
+
+```powershell
+python -m src.deploy_models --web-project 'folder/of/web-version' --tasks gpa
+```
+
+Then rebuild/restart the web project and check `GET /api/health`. The web
+application loads the packaged files from its `models/` directory.
+
+For the complete input schema, supplied-split workflow, held-out evaluation
+rules, and `.exe`/`.apk` deployment guidance, read
+[docs/training_and_deployment.md](docs/training_and_deployment.md).

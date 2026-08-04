@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,11 @@ from src.config import (
 from src.features import aggregate_history
 
 
-def load_split(split: str, data_dir: Path = DATA_DIR) -> pd.DataFrame:
+def load_split(
+    split: str,
+    data_dir: Path = DATA_DIR,
+    tasks: Sequence[str] | None = None,
+) -> pd.DataFrame:
     """Load one generated split and validate its minimum V2.2 schema."""
     if split not in {"train", "validation", "test"}:
         raise ValueError("split must be train, validation, or test.")
@@ -35,11 +39,14 @@ def load_split(split: str, data_dir: Path = DATA_DIR) -> pd.DataFrame:
             f"Dataset split not found: {path}. Run `python -m src.generate_dataset` first."
         )
     frame = pd.read_csv(path)
+    selected_tasks = tuple(TARGETS) if tasks is None else tuple(tasks)
+    unknown = set(selected_tasks).difference(TARGETS)
+    if unknown:
+        raise ValueError(f"Unknown tasks: {sorted(unknown)}")
     required = (
         set(HISTORY_REQUIRED_FIELDS)
-        | set(TARGETS.values())
-        | {"student_id", "final_course_score", "final_exam_score_audit_only"}
-        | set(V1_FEATURE_COLUMNS)
+        | {TARGETS[task] for task in selected_tasks}
+        | {"student_id"}
     )
     missing = required.difference(frame.columns)
     if missing:
@@ -59,8 +66,10 @@ def history_from_group(group: pd.DataFrame, cutoff: int) -> list[dict[str, objec
 def build_aggregated_examples(
     frame: pd.DataFrame,
     cutoffs: Iterable[int] = EVALUATION_CUTOFFS,
+    tasks: Sequence[str] | None = None,
 ) -> pd.DataFrame:
     """Build one leakage-safe aggregate row per attempt and cutoff."""
+    selected_tasks = tuple(TARGETS) if tasks is None else tuple(tasks)
     rows: list[dict[str, object]] = []
     for _, group in frame.groupby("attempt_id", sort=False):
         first = group.iloc[0]
@@ -71,7 +80,7 @@ def build_aggregated_examples(
                 {
                     "student_id": first["student_id"],
                     "attempt_id": first["attempt_id"],
-                    **{column: first[column] for column in TARGETS.values()},
+                    **{TARGETS[task]: first[TARGETS[task]] for task in selected_tasks},
                 }
             )
             rows.append(row)

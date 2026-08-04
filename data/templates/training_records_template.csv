@@ -1,0 +1,2 @@
+student_id,attempt_id,course_id,semester,week,weekly_grade,attendance,assignment_score,quiz_score,submission_delay_days,corrections_count,assignment_completed,quiz_completed,midterm_score,final_gpa,course_outcome,learning_pace
+S0001,S0001-PY101-1,PY101,1,1,72,90,74,,0,0,1,0,,3.2,pass,on_track
