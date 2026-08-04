@@ -71,7 +71,7 @@ npm.cmd run dev
 
 Open the Vite address printed by the command, normally `http://127.0.0.1:5173`.
 
-## 6. Deploy a model trained in `version-2-3`
+## 6. Deploy a model trained in `training-version`
 
 1. Train and validate the model only in the separate training project.
 2. Confirm that its pipeline accepts the exact aggregated columns in `src/config.py`.
