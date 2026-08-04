@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.DS_Store
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# Local artifacts
+data/
+*.srg-history
+models/*.staged
+models/*.backup
+
+# Local tooling and secrets
+.env
+.vscode/
+logs/ai/*.tmp
