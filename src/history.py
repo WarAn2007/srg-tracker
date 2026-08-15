@@ -85,8 +85,12 @@ def validate_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
         _number(row, "midterm_score", 0, 100, optional=True)
         if row["assignment_completed"] and _missing(row["assignment_score"]):
             raise ValueError("A completed assignment requires assignment_score.")
+        if not row["assignment_completed"] and not _missing(row["assignment_score"]):
+            raise ValueError("assignment_score requires assignment_completed=1.")
         if row["quiz_completed"] and _missing(row["quiz_score"]):
             raise ValueError("A completed quiz requires quiz_score.")
+        if not row["quiz_completed"] and not _missing(row["quiz_score"]):
+            raise ValueError("quiz_score requires quiz_completed=1.")
         if row["week"] < 7 and not _missing(row["midterm_score"]):
             raise ValueError("midterm_score cannot be supplied before week 7.")
         if row["week"] >= 7:
@@ -105,5 +109,14 @@ def validate_history(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
             )
         if len({round(value, 8) for value in midterms}) != 1:
             raise ValueError("midterm_score must remain fixed from week 7 onward.")
+
+    for period, period_rows in (
+        ("before the midterm", [row for row in rows if row["week"] < 7]),
+        ("after the midterm", [row for row in rows if row["week"] >= 7]),
+    ):
+        if sum(int(row["assignment_completed"]) for row in period_rows) > 1:
+            raise ValueError(f"Only one completed assignment is allowed {period}.")
+        if sum(int(row["quiz_completed"]) for row in period_rows) > 1:
+            raise ValueError(f"Only one completed quiz is allowed {period}.")
 
     return rows

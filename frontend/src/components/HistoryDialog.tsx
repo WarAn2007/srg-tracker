@@ -1,14 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   decryptHistory,
   downloadEnvelope,
   encryptHistory,
-  hasLocalVault,
-  importLocalEnvelope,
   parseEnvelopeFile,
-  readLocalEnvelope,
-  saveLocalHistory,
+  readHistoryFile,
+  saveHistoryFile,
   type VaultEnvelope,
 } from "../historyVault";
 import type { HistoryEntry, Prediction } from "../types";
@@ -35,19 +33,25 @@ export default function HistoryDialog({ prediction, onClose, onNotice }: { predi
   const [confirmation, setConfirmation] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [envelope, setEnvelope] = useState<VaultEnvelope | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
-  const exists = hasLocalVault();
+  const exists = envelope !== null;
+
+  useEffect(() => {
+    void readHistoryFile().then(setEnvelope).catch((caught) => setError(caught instanceof Error ? caught.message : "History vault could not be read."));
+  }, []);
 
   const unlockOrCreate = async () => {
     setBusy(true); setError("");
     try {
       if (exists) {
-        const envelope = readLocalEnvelope();
         if (!envelope) throw new Error("The local history vault could not be read.");
         setEntries(await decryptHistory(envelope, password));
       } else {
         if (password !== confirmation) throw new Error("The two passwords do not match.");
-        await saveLocalHistory([], password);
+        const created = await encryptHistory([], password);
+        await saveHistoryFile(created);
+        setEnvelope(created);
         setEntries([]);
       }
       setUnlocked(true);
@@ -60,7 +64,9 @@ export default function HistoryDialog({ prediction, onClose, onNotice }: { predi
     if (!prediction) return;
     const entry = entryFromPrediction(prediction);
     const next = [entry, ...entries];
-    await saveLocalHistory(next, password);
+    const updated = await encryptHistory(next, password);
+    await saveHistoryFile(updated);
+    setEnvelope(updated);
     setEntries(next);
     onNotice("Prediction saved to encrypted history.");
   };
@@ -75,7 +81,8 @@ export default function HistoryDialog({ prediction, onClose, onNotice }: { predi
     try {
       const envelope = parseEnvelopeFile(await file.arrayBuffer()) as VaultEnvelope;
       const importedEntries = await decryptHistory(envelope, password);
-      importLocalEnvelope(envelope);
+      await saveHistoryFile(envelope);
+      setEnvelope(envelope);
       setEntries(importedEntries);
       setUnlocked(true);
       onNotice("Encrypted history file imported.");
@@ -90,7 +97,7 @@ export default function HistoryDialog({ prediction, onClose, onNotice }: { predi
         <div className="vault-gate">
           <div className="vault-symbol" aria-hidden="true">◇</div>
           <h3>{exists ? "Unlock your local vault" : "Create your local vault"}</h3>
-          <p>Records are encrypted with AES-GCM before they are stored. The password never leaves this browser and cannot be recovered.</p>
+          <p>Records are encrypted with AES-GCM before they are stored in <code>history/history.bin</code>. The password never leaves this browser and cannot be recovered.</p>
           <label><span>Password</span><input type="password" autoComplete="off" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           {!exists && <label><span>Confirm password</span><input type="password" autoComplete="off" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} /></label>}
           {error && <p className="inline-error" role="alert">{error}</p>}

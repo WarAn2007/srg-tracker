@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -119,6 +120,29 @@ class ApiTests(unittest.TestCase):
         error = response.json()["error"]
         self.assertEqual(error["code"], "request_validation_failed")
         self.assertTrue(error["fields"])
+
+    def test_duplicate_assignment_in_one_period_is_rejected(self) -> None:
+        payload = history_payload()
+        duplicate = dict(payload["history"][0])  # type: ignore[index]
+        duplicate.update({"week": 2, "weekly_grade": 75.0, "assignment_score": 81.0, "assignment_completed": 1})
+        payload["history"].append(duplicate)  # type: ignore[union-attr]
+        with TestClient(app) as client:
+            response = client.post("/api/predict", json=payload)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Only one completed assignment", response.json()["error"]["message"])
+
+    def test_encrypted_history_is_written_to_local_history_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            history_dir = Path(directory) / "history"
+            history_file = history_dir / "history.bin"
+            with patch("api.main.HISTORY_DIR", history_dir), patch("api.main.HISTORY_FILE", history_file):
+                with TestClient(app) as client:
+                    saved = client.put("/api/history", content=b"SRGH\x01{}", headers={"Content-Type": "application/octet-stream"})
+                    loaded = client.get("/api/history")
+            self.assertEqual(saved.status_code, 204)
+            self.assertEqual(loaded.status_code, 200)
+            self.assertEqual(loaded.content, b"SRGH\x01{}")
+            self.assertTrue(history_file.exists())
 
 
 class SchemaTests(unittest.TestCase):

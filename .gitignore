@@ -11,6 +11,7 @@ frontend/.vite/
 # Local artifacts
 data/
 *.srg-history
+history/
 models/*.staged
 models/*.backup
 

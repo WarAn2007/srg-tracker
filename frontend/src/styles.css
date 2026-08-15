@@ -261,6 +261,9 @@ button:disabled { opacity: .42; cursor: not-allowed; }
   background: rgba(2, 14, 12, .75);
 }
 .field input:hover, .field input:focus, .settings-section input:hover, .settings-section input:focus, .settings-section select:focus, .vault-gate input:focus { border-color: var(--accent); }
+.field.field-invalid input { border-color: #ff6e82; background: rgba(92, 17, 28, .28); box-shadow: 0 0 0 1px rgba(255, 110, 130, .18), 0 0 18px rgba(255, 77, 105, .12); }
+.field.field-invalid input:focus { border-color: #ff9bab; outline: 1px solid rgba(255, 155, 171, .4); }
+.field-error { color: #ff9bab !important; line-height: 1.35; }
 .field input::placeholder { color: #405c54; }
 .form-footer { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 12px; padding-top: 24px; border-top: 1px solid var(--line); }
 

@@ -1,6 +1,5 @@
 import type { HistoryEntry } from "./types";
 
-const STORAGE_KEY = "srg-v4-encrypted-history";
 const ITERATIONS = 250_000;
 const FILE_MAGIC = new Uint8Array([0x53, 0x52, 0x47, 0x48, 0x01]);
 
@@ -46,16 +45,6 @@ async function deriveKey(password: string, salt: Uint8Array, iterations: number)
   );
 }
 
-export function hasLocalVault() {
-  return localStorage.getItem(STORAGE_KEY) !== null;
-}
-
-export function readLocalEnvelope(): VaultEnvelope | null {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return null;
-  return JSON.parse(raw) as VaultEnvelope;
-}
-
 export async function encryptHistory(entries: HistoryEntry[], password: string): Promise<VaultEnvelope> {
   if (password.length < 8) throw new Error("Use at least 8 characters for the history password.");
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -96,16 +85,6 @@ export async function decryptHistory(envelope: VaultEnvelope, password: string):
   }
 }
 
-export async function saveLocalHistory(entries: HistoryEntry[], password: string) {
-  const envelope = await encryptHistory(entries, password);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
-  return envelope;
-}
-
-export function importLocalEnvelope(envelope: VaultEnvelope) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(envelope));
-}
-
 export function parseEnvelopeFile(buffer: ArrayBuffer): VaultEnvelope {
   const bytes = new Uint8Array(buffer);
   if (bytes.length <= FILE_MAGIC.length || !FILE_MAGIC.every((value, index) => bytes[index] === value)) {
@@ -114,12 +93,32 @@ export function parseEnvelopeFile(buffer: ArrayBuffer): VaultEnvelope {
   return JSON.parse(new TextDecoder().decode(bytes.slice(FILE_MAGIC.length))) as VaultEnvelope;
 }
 
-export function downloadEnvelope(envelope: VaultEnvelope) {
+export function serializeEnvelope(envelope: VaultEnvelope): ArrayBuffer {
   const payload = new TextEncoder().encode(JSON.stringify(envelope));
   const output = new Uint8Array(FILE_MAGIC.length + payload.length);
   output.set(FILE_MAGIC);
   output.set(payload, FILE_MAGIC.length);
-  const blob = new Blob([asArrayBuffer(output)], { type: "application/octet-stream" });
+  return asArrayBuffer(output);
+}
+
+export async function readHistoryFile(): Promise<VaultEnvelope | null> {
+  const response = await fetch("/api/history");
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error("The local history vault could not be read.");
+  return parseEnvelopeFile(await response.arrayBuffer());
+}
+
+export async function saveHistoryFile(envelope: VaultEnvelope) {
+  const response = await fetch("/api/history", {
+    method: "PUT",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: serializeEnvelope(envelope),
+  });
+  if (!response.ok) throw new Error("The local history vault could not be saved.");
+}
+
+export function downloadEnvelope(envelope: VaultEnvelope) {
+  const blob = new Blob([serializeEnvelope(envelope)], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

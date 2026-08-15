@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from api.schemas import HealthResponse, ModelInfo, PredictionRequest, PredictionResponse
@@ -22,6 +22,10 @@ LOGGER = logging.getLogger(__name__)
 ROOT_DIR = Path(__file__).resolve().parents[1]
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 MAX_MODEL_BYTES = 64 * 1024 * 1024
+HISTORY_DIR = ROOT_DIR / "history"
+HISTORY_FILE = HISTORY_DIR / "history.bin"
+HISTORY_MAGIC = b"SRGH\x01"
+MAX_HISTORY_BYTES = 8 * 1024 * 1024
 
 
 @asynccontextmanager
@@ -98,6 +102,27 @@ def predict(payload: PredictionRequest, request: Request):
     except (ValueError, ModelRegistryError) as error:
         return error_response(400, "prediction_input_invalid", str(error))
     return PredictionResponse(**result)
+
+
+@app.get("/api/history")
+def read_history() -> Response:
+    """Return the encrypted local history vault, never its decrypted contents."""
+    if not HISTORY_FILE.exists():
+        return error_response(404, "history_not_found", "No local history vault exists yet.")
+    return Response(HISTORY_FILE.read_bytes(), media_type="application/octet-stream")
+
+
+@app.put("/api/history")
+async def write_history(request: Request) -> Response:
+    """Persist a browser-encrypted binary history vault inside the local project."""
+    payload = await request.body()
+    if len(payload) <= len(HISTORY_MAGIC) or len(payload) > MAX_HISTORY_BYTES:
+        return error_response(400, "invalid_history_file", "The history file is empty or exceeds the 8 MB local limit.")
+    if not payload.startswith(HISTORY_MAGIC):
+        return error_response(400, "invalid_history_file", "The history file is not a supported encrypted SRG vault.")
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    HISTORY_FILE.write_bytes(payload)
+    return Response(status_code=204)
 
 
 @app.post("/api/models/{task}", response_model=ModelInfo)
