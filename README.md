@@ -5,7 +5,7 @@
 **Selected project track:** SRG Tracker - Student Ranking & GPA Tracker
 
 **Version:** V4 local WEB release
-
+![image](docs/img.png)
 
 SRG-Tracker is a local web application that gives advisory predictions from a student's observed weekly course history. It estimates final GPA, course outcome, and learning pace. The project does not rank students and must not be used for automated academic decisions.
 
