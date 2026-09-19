@@ -30,7 +30,7 @@ Students and instructors need an early, reproducible indication of academic prog
 
 **SRG Tracker - Student Ranking & GPA Tracker.** The implemented V4 scope is the local UI and early-warning workflow; individual ranking is explicitly out of scope.
 
-
+![image](docs/img2.png)
 ## 3. Dataset source
 
 The project uses a deterministic, fully synthetic educational dataset generated with seed `20260730`. It contains 450 student-disjoint course attempts, each with weekly records for weeks 1-14 (63,000 weekly rows in total). The feature ideas and correlation exploration were inspired by the Open University Learning Analytics Dataset (OULAD), but no real OULAD learner records are included or predicted. Supporting exploratory images in `training-version` branch are [corr-matrix-oulad(1).png](reports/figures/corr-matrix-oulad(1).png) and [corr-matrix-oulad(2).png](reports/figures/corr-matrix-oulad(2).png).
@@ -65,7 +65,7 @@ The `models/` directory contains the ready-to-use model artifacts required by th
 
 The packaged runtime initially uses Ridge regression for GPA and Logistic Regression pipelines for outcome and pace. `models/selection.json` records the exact mapping and validation context. A model uploaded in Settings is explicitly recorded as `user_uploaded_trusted_artifact`; it is not called an automatic winner and does not inherit an older held-out evaluation.
 
-
+![image](docs/img3.png)
 ## 5. Pipeline and system architecture
 
 
